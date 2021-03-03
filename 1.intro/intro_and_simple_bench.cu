@@ -9,22 +9,29 @@
 #include <stdio.h>
 #include <time.h>
 #include <chrono>
-#define SIZE 1048576 //1024*1024
+//#define SIZE 4194303*1024 //1024*1024
+
+size_t SIZE = 131072 * 1024;
 #define BLOCKSIZE 1024
 __global__ void deviceADD(int* a, int* b, int* c) {
-	int off = blockIdx.x + threadIdx.x * BLOCKSIZE;
+	int off = threadIdx.x + blockIdx.x * blockDim.x;
 	c[off] = a[off] + b[off];
 }
-void fillramdom(int size, int* ptr) {
-	for (int i = 0; i < size; i++) {
+void fillramdom(size_t size, int* ptr) {
+	for (size_t i = 0; i < size; i++) {
 		i[ptr] = rand();
 	}
 }
+void errhand(cudaError_t err) {
+	if (err) {
+		printf("Error: %s\n", cudaGetErrorString(err));
+		std::cout << err << std::endl;
+	}
+}
 //cpu版計算function
-
-std::chrono::duration<double > calByCPU(int size, int* a, int* b, int* ans) {
+std::chrono::duration<double > calByCPU(size_t size, int* a, int* b, int* ans) {
 	auto start = std::chrono::high_resolution_clock::now();
-	for (int i = 0; i < size; i++) {
+	for (size_t i = 0; i < size; i++) {
 		i[ans] = i[a] + i[b];
 	}
 	auto end = std::chrono::high_resolution_clock::now();
@@ -32,31 +39,51 @@ std::chrono::duration<double > calByCPU(int size, int* a, int* b, int* ans) {
 }
 //gpu版計算function
 //計時器只計算扣掉搬data後的計算時間
-std::chrono::duration<double > calByGPU(int size, int* a, int* b, int* ans) {
+std::chrono::duration<double > calByGPU(size_t size, int* a, int* b, int* ans) {
 	int* gpuA, * gpuB, * gpuC;
-	cudaMalloc((void**)&gpuA, size * sizeof(int));
-	cudaMalloc((void**)&gpuB, size * sizeof(int));
-	cudaMalloc((void**)&gpuC, size * sizeof(int));
+	cudaError_t err;
 
-	cudaMemcpy(gpuA, a, size * sizeof(int), cudaMemcpyHostToDevice);
-	cudaMemcpy(gpuB, b, size * sizeof(int), cudaMemcpyHostToDevice);
 
+
+	auto allocStart = std::chrono::high_resolution_clock::now();
+	err = cudaMalloc((void**)&gpuA, size * sizeof(int));
+	errhand(err);
+	err = cudaMalloc((void**)&gpuB, size * sizeof(int));
+	errhand(err);
+	err = cudaMalloc((void**)&gpuC, size * sizeof(int));
+	errhand(err);
+
+	err = cudaMemcpy(gpuA, a, size * sizeof(int), cudaMemcpyHostToDevice);
+	errhand(err);
+	err = cudaMemcpy(gpuB, b, size * sizeof(int), cudaMemcpyHostToDevice);
+	errhand(err);
+	auto allocEnd = std::chrono::high_resolution_clock::now();
+	auto allocTime = std::chrono::duration_cast <std::chrono::duration<double >> (allocEnd - allocStart);
+	std::cout << "Alloc time : " << allocTime.count() << std::endl;
+
+
+
+	dim3 gridDim(SIZE / BLOCKSIZE,1,1);
 	auto start = std::chrono::high_resolution_clock::now();
-	deviceADD <<<SIZE / BLOCKSIZE, BLOCKSIZE >>> (gpuA, gpuB, gpuC);
+	deviceADD <<<gridDim, BLOCKSIZE >>> (gpuA, gpuB, gpuC);
 	//<<<block, thread>>>
 	cudaDeviceSynchronize();
 	auto end = std::chrono::high_resolution_clock::now();
 
+	err = cudaGetLastError();
+	errhand(err);
 	//<<<block, thread>>>
-	cudaMemcpy(ans, gpuC, size * sizeof(int), cudaMemcpyDeviceToHost);
+	err = cudaMemcpy(ans, gpuC, size * sizeof(int), cudaMemcpyDeviceToHost);
+	errhand(err);
+	cudaDeviceSynchronize();
 	cudaFree(gpuA);
 	cudaFree(gpuB);
 	cudaFree(gpuC);
 	return std::chrono::duration_cast <std::chrono::duration<double >> (end - start);
 
 }
-bool equal(int size, int* a, int* b) {
-	for (int i = 0; i < size; i++) {
+bool equal(size_t size, int* a, int* b) {
+	for (size_t i = 0; i < size; i++) {
 		if (i[a] != i[b]) {
 			std::cout << i[a] << "\t" << i[b] << "\t" << i << std::endl;
 			return false;
@@ -65,12 +92,13 @@ bool equal(int size, int* a, int* b) {
 	}
 	return true;
 }
-void printArr(int size, int* ptr) {
-	for (int i = 0; i < size; i++) {
+void printArr(size_t size, int* ptr) {
+	for (size_t i = 0; i < size; i++) {
 		std::cout << i << ": " << i[ptr] << std::endl;
 	}
 }
-void benchmark(int time, std::chrono::duration<double > (*func)(int, int*, int*, int*), int size, int *a , int *b , int * c) {
+
+void benchmark(int time, std::chrono::duration<double > (*func)(size_t, int*, int*, int*), size_t size, int *a , int *b , int * c) {
 	std::cout << "start benchmark" << std::endl;
 	std::cout << "Time\texecute Time" << std::endl;
 	std::cout << "---------------" << std::endl;
