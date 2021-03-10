@@ -93,11 +93,14 @@ int main(int argc, char** argv){
 
 
 
-    dim3 block(orgImg.total() / BLOCKSIZE,1,1);
+    dim3 block(orgImg.total() / BLOCKSIZE + 1 ,1,1);
+    if(orgImg.total() % BLOCKSIZE != 0)
+        block.x += 1;
     dim3 thread(BLOCKSIZE,1 ,1);
 
     start = std::chrono::high_resolution_clock::now();
     calHisto<<<block,thread>>>(devHistoArr);
+    cudaDeviceSynchronize();
     end = std::chrono::high_resolution_clock::now();
     period = std::chrono::duration_cast < std::chrono::duration<double >> (end - start);
     std::cout << std::chrono::duration_cast<std::chrono::microseconds>( period ).count() << "us" << std::endl;
@@ -113,9 +116,9 @@ int main(int argc, char** argv){
         std::cout << cudaGetErrorString(err) << std::endl;
     }
 
-//    for(auto it = 0 ; it < 256 ; it ++){
-//        std::cout << hostHistArr[it] << std::endl;
-//    }
+    for(auto it = 0 ; it < 256 ; it ++){
+        std::cout << hostHistArr[it] << std::endl;
+    }
     //Free
     cudaUnbindTexture(&text);
     cudaFree(devImg);
@@ -148,6 +151,7 @@ int main(int argc, char** argv){
 
     start = std::chrono::high_resolution_clock::now();
     withoutText<<<block,thread>>>(devHistoArr, devImg);
+    cudaDeviceSynchronize();
     end = std::chrono::high_resolution_clock::now();
     period = std::chrono::duration_cast < std::chrono::duration<double >> (end - start);
     std::cout << std::chrono::duration_cast<std::chrono::microseconds>( period ).count() << "us" << std::endl;
