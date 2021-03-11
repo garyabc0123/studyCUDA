@@ -12,7 +12,7 @@ __global__ void convolution(
                             uchar *ans,
                             int8_t *mask,uint imgW, uint imgH){
     int x = threadIdx.x + blockDim.x * blockIdx.x;
-    int y = threadIdx.y + ockDim.y * blockIdx.y;
+    int y = threadIdx.y + blockDim.y * blockIdx.y;
     if(x > imgW || y > imgH)
         return;
     int16_t total = 0;
